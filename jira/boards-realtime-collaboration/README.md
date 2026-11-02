@@ -1,10 +1,10 @@
 # Boards & Real-Time Collaboration
 
-Status: Not Started · 12 questions
+Status: In Progress · 12 questions
 
 ## Question backlog
 
-- [ ] **JIRA-001** — How will changes made by other users appear in real time on a Jira Kanban board?
+- [ ] **[JIRA-001](JIRA-001-real-time-kanban-updates.md)** — How will changes made by other users appear in real time on a Jira Kanban board? *(In Progress — SSE decision recorded)*
 - [ ] **JIRA-002** — When should we choose polling, long polling, SSE, or WebSockets?
 - [ ] **JIRA-003** — How do we manage thousands of concurrent SSE connections?
 - [ ] **JIRA-004** — How do we broadcast events across multiple server instances?
