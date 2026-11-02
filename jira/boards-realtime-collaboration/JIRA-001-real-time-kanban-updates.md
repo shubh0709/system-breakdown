@@ -64,6 +64,61 @@ data: {"boardId":"board-A","issueId":"JIRA-42","status":"In Progress","version":
 - **SSE limitations:** Heartbeats, connection limits (especially HTTP/1.x), proxies, and load balancing need production testing.
 - **Snapshot-to-stream race:** We need a consistent cursor/checkpoint strategy so changes between initial fetch and subscription are not missed.
 
+
+## 6A. What Exactly Is a Full Board Snapshot?
+
+A **full snapshot** is a fresh, internally consistent representation of the board's **current state** at a particular checkpoint. It is **not** a browser page reload and **not** a history of all intermediate edits.
+
+For example, a snapshot may contain:
+- Board ID and current board version/event cursor.
+- Columns and their order (To Do, In Progress, Done).
+- Cards presently visible on that board, with current title, status, assignee, position/order, and versions.
+- Relevant metadata needed for the current board view.
+
+If a client last processed event **104** and the server is now at event **2104**, replaying 2,000 events may be wasteful. Instead, request the latest board state:
+
+```http
+GET /boards/board-A/snapshot
+```
+
+Illustrative response:
+
+```json
+{
+  "boardId": "board-A",
+  "cursor": 2104,
+  "columns": [
+    {"id": "todo", "name": "To Do"},
+    {"id": "doing", "name": "In Progress"},
+    {"id": "done", "name": "Done"}
+  ],
+  "cards": [
+    {"id": "JIRA-42", "title": "Fix login", "status": "doing", "position": 100},
+    {"id": "JIRA-58", "title": "Update docs", "status": "done", "position": 200}
+  ]
+}
+```
+
+The client **replaces/reconciles the local board state**, then continues receiving events **after cursor 2104**. The browser tab, navigation, and unrelated application state need not reload. A full snapshot is scoped to the relevant board/query, not necessarily every issue in the organization. Large boards may need paginated or bounded snapshots with a consistent version.
+
+### Critical race-condition requirement
+
+A naive sequence—fetch snapshot at 2104, then subscribe only to whatever is live—can lose event 2105 that happens between those steps. The snapshot API and event stream need a consistent replay cursor.
+
+One safe pattern:
+1. Backend obtains a **consistent snapshot plus matching cursor C** (e.g., C = 2104).
+2. Client opens/reopens the event stream requesting all events **after C**.
+3. Server replays retained events > C and then follows live events; client ignores duplicates and applies board sequence/version checks.
+4. If events after C are no longer retained, retry snapshot/resync instead of silently skipping them.
+
+For a browser `EventSource`, the initial cursor can be supplied using a query parameter or an application-specific handshake; `Last-Event-ID` is managed automatically on native reconnect when SSE event IDs are used. A query parameter must be validated and scoped to the authorized board.
+
+### Replay versus snapshot decision
+
+Use event replay for a small, available contiguous gap. Prefer a snapshot when replay is unavailable or disproportionately costly by **event count, payload bytes, replay time, or retention gap**. A threshold such as 2,000 events is illustrative, **not** a universally correct cutoff: measure actual replay cost versus snapshot cost.
+
+A snapshot returns final state: if a card changed title 20 times, we only need the latest title for board rendering. Detailed audit history remains a separate concern.
+
 ## 7. Final Design Decision (Current)
 
 **Use HTTP for mutations and SSE for change notifications**, because our current Kanban use case needs one-way server push and should avoid frequent empty polling. Keep polling and WebSockets as valid alternatives if real-world measurements or requirements change.
