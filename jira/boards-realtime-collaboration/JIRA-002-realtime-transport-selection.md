@@ -1,6 +1,6 @@
 # JIRA-002 — Choosing Polling, Long Polling, SSE, or WebSockets
 
-**Status:** In Progress — design discussion recorded (2026-11-03)  
+**Status:** Design discussion complete (2026-11-03); implementation and tests not yet done  
 **Original roadmap question:** When should we choose polling, long polling, SSE, or WebSockets?  
 **Worked example:** Jira issue comments, permission changes, and typing indicators.
 
@@ -74,9 +74,15 @@ Provide live issue-thread updates to multiple users connected to different appli
 - [ ] Typing timeout defaults to 8 seconds; app-start config plus 5-minute server memory cache (only if DB-backed config is needed), with no mandatory live updates.
 - [ ] Load tests include 200 viewers / 20 typists, and reconnect, delay, duplicate, and revocation cases.
 
-## Remaining design questions
+## Resolved design questions — baseline for implementation
 
-- Exact issue stream endpoint, subscription registry and cross-instance fanout topology.
-- Durable event-log retention and replay-window limits; client sequence-gap handling.
-- Permission propagation latency and stream termination contract.
-- Whether the typing state can be entirely client-timer-driven if no join-time `who is typing` snapshot is required.
+These choices complete the *transport selection design* in JIRA-002, not the implementation. Deeper scaling and delivery mechanics belong to JIRA-003–007.
+
+1. **Endpoint and fanout:** use `GET /api/issues/:issueId/events` (authenticated issue-scoped SSE), with `POST /api/issues/:issueId/typing` for typing actions and normal authorized comment mutation endpoints. Each server maintains a local in-memory map of its connected, authorized SSE viewers by issue. On mutation commit, publish an event to a cross-server fanout layer (baseline: Redis Pub/Sub for low-stakes notifications), and each receiving instance forwards only to locally subscribed viewers. A shared registry for routing to *only* active instances is a future optimization; avoid a new global registry until measurements warrant it (JIRA-004). Redis Pub/Sub alone is **not durable**: durable comments must also be committed to DB/outbox/event log for recovery.
+2. **Replay and ordering:** on successful comment mutation, persist the comment plus an ordered durable event (transactional outbox or equivalent). Allocate a monotonic per-issue event sequence transactionally and use it as the durable SSE `id` (e.g. `123:42` scoped to issue 123) and deduplication/replay cursor. On reconnect, read `Last-Event-ID`, validate it belongs to the authorized issue, replay events after that sequence in order, then enter the live feed with a no-gap handoff (buffer and dedupe concurrent live deliveries). **Never attach an SSE `id` to ephemeral typing events**, as those must not advance or overwrite the durable replay cursor. As a baseline policy, retain **24 hours** of comment events and cap replay batches; if cursor has fallen outside retention, has a gap, or the backlog exceeds a safe threshold, return a named `resync.required` SSE event and fetch a fresh authorized comment snapshot. Exact retention/batch sizes are tuning parameters for JIRA-006/007, not proven capacity guarantees.
+3. **Permission revocation:** authenticate/authorize on initial stream and every reconnect; validate permissions on all HTTP mutations. Revocation must invalidate active subscriptions across instances and prevent future private event delivery server-side, not merely send a UI event. Broadcast a reliable-enough invalidation signal plus maintain fail-closed permission version/check at fanout to handle missed signals; on a known revocation, stop sending data immediately, optionally send `access.revoked`, and terminate the affected issue stream. A plain asynchronous Pub/Sub signal without an authorization gate cannot guarantee instantaneous revocation across partitions: treat propagation delay as a security risk to test, not a promise of zero latency. Client removes thread/typing UI on revoke.
+4. **Typing state:** for this multi-server demonstration, keep Redis `i:{issueId}:t:{userId}` with 6–8-second TTL so new viewers can optionally see current typists and start/still/stop land on different servers. Clients still enforce their own 8-second inactivity timer; expiration is a local UI behavior and not a guaranteed server event. If join-time typing snapshots are unnecessary, Redis typing-state storage could later be dropped; the SSE fanout would still be required between servers. Treat a late previous-session start/still after stop as obsolete by using a session/generation token and monotonic ordering for each sender.
+
+### Scope boundary
+
+JIRA-002 **design is complete**: choose SSE + HTTP for Jira comments, permissions and typing; don't introduce WebSockets solely for typing; use simple startup-loaded UX config with TTL fallback. JIRA-003 handles connection scaling, JIRA-004 cross-instance fanout, JIRA-005 sequence generation/order, JIRA-006 reconnect replay, JIRA-007 snapshot thresholds, and JIRA-012 permission revocation at scale. Implementation acceptance checkboxes above remain unchecked until proven by code/tests.
