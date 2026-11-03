@@ -6,7 +6,7 @@ Status: In Progress · 12 questions
 
 - [ ] **[JIRA-001](JIRA-001-real-time-kanban-updates.md)** — How will changes made by other users appear in real time on a Jira Kanban board? *(In Progress — SSE decision recorded)*
 - [x] **[JIRA-002](JIRA-002-realtime-transport-selection.md)** — When should we choose polling, long polling, SSE, or WebSockets? *(Design discussion complete — SSE + HTTP chosen; implementation pending)*
-- [ ] **JIRA-003** — How do we manage thousands of concurrent SSE connections?
+- [ ] **[JIRA-003](JIRA-003-managing-concurrent-sse-connections.md)** — How do we manage thousands of concurrent SSE connections? *(Design discussion documented — implementation and capacity testing pending)*
 - [ ] **JIRA-004** — How do we broadcast events across multiple server instances?
 - [ ] **JIRA-005** — How do we maintain event ordering?
 - [ ] **JIRA-006** — How does a reconnecting client recover missed events?
