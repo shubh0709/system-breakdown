@@ -19,8 +19,8 @@
 
 ## Progress
 
-- Not Started: 100
-- In Progress: 0
-- Completed: 0
+- Not Started: 98
+- In Progress: 1 (JIRA-001)
+- Completed: 1 design discussion (JIRA-002; implementation pending)
 
 Begin with JIRA-001. Earlier conversation on SSE vs polling, reconnect, event IDs, and per-board ordering can seed the future discussion page. Related tangents go into open questions rather than derailing the active topic.
